@@ -57,7 +57,7 @@ namespace FiresMounts
             {
                 if (c == null) continue;
                 string pn = global::Utils.GetPrefabName(c.gameObject);
-                if (!pn.StartsWith(MountNames.HorsePrefab) && !pn.StartsWith("mm_horse") && !pn.StartsWith("mm_deer") && !pn.StartsWith("mm_unicorn")) continue;
+                if (!pn.StartsWith(MountNames.HorsePrefab)) continue;
                 if (!string.IsNullOrEmpty(filter) && pn.IndexOf(filter, System.StringComparison.OrdinalIgnoreCase) < 0) continue;
                 float d = Vector3.Distance(c.transform.position, player.transform.position);
                 if (d < bestDist) { bestDist = d; best = c; }

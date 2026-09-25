@@ -539,8 +539,10 @@ namespace FiresMounts
             if (other.gameObject.layer == _terrainLayer) return;
             if (other.GetComponentInParent<Character>() != null) return;   // never phase through creatures/players
 
-            foreach (var ct in c.contacts)
-                if (ct.normal.y > 0.5f) return;                            // it's holding us up — keep it solid
+            // Read by index: the contacts property hands back a fresh array on every access, and this runs per
+            // collision per frame while a mount is touching anything.
+            for (int i = 0; i < c.contactCount; i++)
+                if (c.GetContact(i).normal.y > 0.5f) return;               // it's holding us up — keep it solid
 
             float bellyWorld = transform.position.y + MountConfig.BellyClearance.Value * transform.lossyScale.y;
             if (other.bounds.max.y > bellyWorld) return;                   // too tall — a real obstacle

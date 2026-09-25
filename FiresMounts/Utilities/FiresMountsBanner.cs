@@ -59,8 +59,8 @@ namespace FiresMounts
         }
 
         // Compact banner — horseshoe over a stable-status frame. 31-char frame body
-        // (3 lead + ╔ + 26 ═ + ╗); 🐴 is a surrogate pair that renders 2 cells,
-        // so the status line's padding assumes an emoji-aware console font.
+        // (3 lead + ╔ + 26 ═ + ╗); 🐴 is a surrogate pair, but the console
+        // ADVANCES ONE column for it (no VS16), however wide the font paints the glyph, so this row pads it as one cell.
         private static readonly Banner.Segment[][] s_compactLines =
         {
             new[] { new Banner.Segment("              ▄█▀▀▀█▄",        ConsoleColor.DarkYellow) },
@@ -81,7 +81,7 @@ namespace FiresMounts
             {
                 new Banner.Segment("   ║      ",           ConsoleColor.DarkGray),
                 new Banner.Segment("🐴 SADDLED UP",        ConsoleColor.Yellow),
-                new Banner.Segment("       ║",             ConsoleColor.DarkGray),
+                new Banner.Segment("        ║",             ConsoleColor.DarkGray),
             },
             new[] { new Banner.Segment("   ╚══════════════════════════╝", ConsoleColor.DarkGray) },
             new[] { new Banner.Segment("    FIRES MOUNTS",             ConsoleColor.Cyan) },

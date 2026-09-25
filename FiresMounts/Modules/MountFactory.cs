@@ -291,8 +291,7 @@ namespace FiresMounts
                 var sc = sadelNode.gameObject.AddComponent<SphereCollider>();
                 // The seat chain sits under a scale-100 Malbers 'Mount' node (mirrors MM's rig). A raw radius here
                 // becomes a ~140m collider once the saddle node activates on tame — melting physics into the
-                // "catches fire + 2fps" loop. Compensate for lossyScale so the hover sphere is ~0.5m in WORLD space,
-                // exactly as our reference/clone paths already do (RegisterReferenceHorses / RegisterCookieClone).
+                // "catches fire + 2fps" loop. Compensate for lossyScale so the hover sphere is ~0.5m in WORLD space.
                 sc.radius = 0.5f / Mathf.Max(sadelNode.lossyScale.x, 0.0001f);
             }
             tame.m_saddle = sadle;

@@ -1,6 +1,6 @@
 {
     "name":  "FiresMounts",
-    "version_number":  "0.1.84",
+    "version_number":  "0.1.91",
     "website_url":  "https://github.com/fire-VA/FiresMounts",
     "description":  "Part of the Fires mod family for Valheim.",
     "dependencies":  [

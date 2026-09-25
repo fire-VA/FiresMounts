@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
   <PropertyGroup>
@@ -12,9 +12,10 @@
     <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
     <LangVersion>latest</LangVersion>
     <FileAlignment>512</FileAlignment>
+    <CodePage>65001</CodePage>
     <Deterministic>true</Deterministic>
+    <PathMap>$(MSBuildProjectDirectory)=/_/</PathMap>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <PublicTest Condition=" '$(PublicTest)' == '' ">false</PublicTest>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <DebugSymbols>true</DebugSymbols>
@@ -33,9 +34,6 @@
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
-  <PropertyGroup Condition=" '$(PublicTest)' == 'true' ">
-    <DefineConstants>$(DefineConstants);PUBLIC_TEST</DefineConstants>
-  </PropertyGroup>
   <ItemGroup>
     <Reference Include="0Harmony">
       <HintPath>..\..\..\..\..\..\..\Program Files (x86)\Steam\steamapps\common\Valheim dedicated server\BepInEx\core\0Harmony.dll</HintPath>
@@ -52,11 +50,11 @@
     <!-- Pinned to the centralized legacy stash (NOT $(GamePath)) so emitted GetStableHashCode IL stays
          branch-deterministic. See reference_assembly_utils_pin. -->
     <Reference Include="assembly_utils">
-      <HintPath>..\..\assembly_valheim\lib\assembly_utils.dll</HintPath>
-      <Private>True</Private>
-    </Reference>
+      <HintPath>$(GamePath)\valheim_Data\Managed\assembly_utils.dll</HintPath>
+      <Private>False</Private>
+      </Reference>
     <Reference Include="FiresUnifiedCore">
-      <HintPath>..\..\FiresUnifiedCore\FiresUnifiedCore\bin\Debug\FiresUnifiedCore.dll</HintPath>
+      <HintPath>..\..\FiresUnifiedCore\FiresUnifiedCore\bin\Release\FiresUnifiedCore.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="assembly_guiutils">
@@ -98,6 +96,7 @@
     <Compile Include="Modules\FiresMountCoat.cs" />
     <Compile Include="Modules\FiresMountJumpPatch.cs" />
     <Compile Include="Modules\MountCommands.cs" />
+    <Compile Include="Modules\MountHelpContent.cs" />
     <Compile Include="Utilities\FiresLogger.cs" />
     <Compile Include="Utilities\FiresMountsBanner.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
@@ -107,19 +106,8 @@
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <PropertyGroup>
-    <BlueHillsPluginDir>C:\Users\travi\AppData\Roaming\r2modmanPlus-local\Valheim\profiles\BlueHills\BepInEx\plugins\FiresMounts\</BlueHillsPluginDir>
-    <BlueHillsDediDir>C:\Program Files (x86)\Steam\steamapps\common\Valheim dedicated server - BlueHills\BepInEx\plugins\FiresMounts\</BlueHillsDediDir>
     <!-- Isolation test done (2026-07-03): confirmed the sustained 2fps was our 4K-texture bundle; re-enabled after
          capping textures to 2K. Set false again to pull mounts from the deploy stack for another isolation test. -->
     <FiresMountsAutoDeploy>true</FiresMountsAutoDeploy>
   </PropertyGroup>
-  <Target Name="DeployToBlueHills" AfterTargets="Build" Condition="'$(FiresMountsAutoDeploy)' == 'true' AND Exists('$(BlueHillsPluginDir)')">
-    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(BlueHillsPluginDir)" OverwriteReadOnlyFiles="true" />
-    <Copy SourceFiles="$(TargetDir)$(TargetName).pdb" DestinationFolder="$(BlueHillsPluginDir)" OverwriteReadOnlyFiles="true" Condition="Exists('$(TargetDir)$(TargetName).pdb')" />
-    <Message Importance="high" Text="Deployed $(TargetFileName) (+pdb) -&gt; $(BlueHillsPluginDir)" />
-  </Target>
-  <Target Name="DeployToBlueHillsDedi" AfterTargets="Build" Condition="'$(FiresMountsAutoDeploy)' == 'true' AND Exists('$(BlueHillsDediDir)')">
-    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(BlueHillsDediDir)" OverwriteReadOnlyFiles="true" />
-    <Message Importance="high" Text="Deployed $(TargetFileName) -&gt; $(BlueHillsDediDir)" />
-  </Target>
 </Project>
