@@ -1,4 +1,4 @@
-using HarmonyLib;
+﻿using HarmonyLib;
 
 namespace FiresMounts
 {
@@ -30,7 +30,7 @@ namespace FiresMounts
     }
 
     /// <summary>
-    /// Reins steering (user-preferred): A/D turn the horse relative to its own heading, camera orbits free,
+    /// Reins steering: A/D turn the horse relative to its own heading, camera orbits free,
     /// releasing all input sends Stop. Replaces vanilla camera-steer on OUR mounts only.
     /// </summary>
     [HarmonyPatch(typeof(Sadle), nameof(Sadle.ApplyControlls))]
@@ -40,14 +40,21 @@ namespace FiresMounts
         private static bool Prefix(Sadle __instance, UnityEngine.Vector3 moveDir, bool run)
         {
             Character mount = __instance.GetCharacter();
-            if (mount == null || mount.GetComponent<FiresMountController>() == null) return true;
+            // The horse and the Mini Fader, a ground mount steered the same way.
+            if (mount == null || (mount.GetComponent<FiresMountController>() == null && !FiresFaderRide.IsFader(mount))) return true;
             if (MountConfig.UseVanillaSteering.Value) return true;   // A/B toggle: run vanilla Sadle.ApplyControlls (look-dir steering)
             if (Player.m_localPlayer == null) return false;
 
             float skill = Player.m_localPlayer.GetSkills().GetSkillFactor(Skills.SkillType.Ride);
             UnityEngine.Vector3 fwd = mount.transform.forward;
+            UnityEngine.Vector3 turnUp = UnityEngine.Vector3.up;
+            // A13 ring: steer in the ring's floor plane, turning around the ring's up (SetMoveDir takes a world direction).
+            if (RingGround.InRing(mount.transform.position, out UnityEngine.Vector3 ringUp)) { fwd = RingGround.Flat(fwd, ringUp, fwd); turnUp = ringUp; }
+            else
+            {
             fwd.y = 0f;
             fwd.Normalize();
+            }
             float steer = UnityEngine.Mathf.Clamp(moveDir.x, -1f, 1f);
             bool fwdHeld = moveDir.z > 0.5f;
 
@@ -55,12 +62,12 @@ namespace FiresMounts
             UnityEngine.Vector3 dir = UnityEngine.Vector3.zero;
             if (fwdHeld || (run && moveDir.z >= -0.5f))
             {
-                dir = UnityEngine.Quaternion.AngleAxis(steer * 45f, UnityEngine.Vector3.up) * fwd;
+                dir = UnityEngine.Quaternion.AngleAxis(steer * 45f, turnUp) * fwd;
                 speed = run ? Sadle.Speed.Run : Sadle.Speed.Walk;
             }
             else if (UnityEngine.Mathf.Abs(steer) > 0.3f)
             {
-                dir = UnityEngine.Quaternion.AngleAxis(steer * 60f, UnityEngine.Vector3.up) * fwd;
+                dir = UnityEngine.Quaternion.AngleAxis(steer * 60f, turnUp) * fwd;
                 speed = Sadle.Speed.Turn;
             }
             else
@@ -74,7 +81,7 @@ namespace FiresMounts
     }
 
     /// <summary>
-    /// The user's design, verbatim: the animation may bob the body (Y) but must NEVER drive it forward.
+    /// The animation may bob the body (Y) but must NEVER drive it forward.
     /// CharacterAnimEvent.OnAnimatorMove feeds animator.deltaPosition into Character.AddRootMotion (applied x55)
     /// — if the clips carry ANY planted-feet positional delta, the body gets snapped "to where the feet say it
     /// should be" against the ride speed. Zero the horizontal part for our mounts; keep vertical.
@@ -86,7 +93,9 @@ namespace FiresMounts
         private static void Prefix(Character __instance, ref UnityEngine.Vector3 vel)
         {
             if (vel.x == 0f && vel.z == 0f) return;
-            if (__instance.GetComponent<FiresMountController>() == null) return;
+            // The Mini Fader and the flyers too: their boss clips' planted feet (the jump clips are tagged "attack") dragged the
+            // body back on landing and through turns, so a jump slowed the mount down.
+            if (!MountProgress.IsOurMount(__instance)) return;   // the horse, the flyers, the Fader (one dictionary lookup, every frame)
             vel.x = 0f;
             vel.z = 0f;
         }
@@ -103,8 +112,9 @@ namespace FiresMounts
         [HarmonyPrefix]
         private static void Prefix(Character __instance, float dt)
         {
-            var ctrl = __instance.GetComponent<FiresMountController>();
-            if (ctrl != null) ctrl.UpdateGaitRamp(dt);
+            if (FiresMountController.ByCharacter.TryGetValue(__instance, out var ctrl) && ctrl != null) { ctrl.UpdateGaitRamp(dt); return; }
+            var fader = FiresFaderRide.LocalRide;   // the Fader rides on the horse's ramp too (only the one being ridden here)
+            if (fader != null && fader.IsBody(__instance)) fader.UpdateGaitRamp(dt);
         }
     }
 
@@ -124,8 +134,7 @@ namespace FiresMounts
         private static void Prefix(ZSyncAnimation __instance, int hash, ref float value)
         {
             if (hash != ForwardHash) return;
-            var ctrl = __instance.GetComponent<FiresMountController>();
-            if (ctrl != null) value = ctrl.NormalizeForwardSpeed(value);
+            if (FiresMountController.ByZanim.TryGetValue(__instance, out var ctrl) && ctrl != null) value = ctrl.NormalizeForwardSpeed(value);
         }
     }
 }

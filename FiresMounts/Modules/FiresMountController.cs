@@ -14,6 +14,7 @@ namespace FiresMounts
     public class FiresMountController : MonoBehaviour
     {
         private Character _character;
+        private MountProgress _progress;
         private ZNetView _nview;
         private ZSyncAnimation _zanim;
         private Animator _anim;
@@ -32,6 +33,8 @@ namespace FiresMounts
         // Gait audio (client-only): a looping spatial source on the horse plays walk/trot/run by the synced gait speed.
         private MountLoopSource _footAudio;
         private bool _audioChecked;
+        private float _audioQuietSince = -1f;
+        private string _gaitClip;
 
         // Vanilla per-biome footstep FX (dust/splash + material SFX), driven at a gait rhythm and layered under the loop.
         private FootStep _footStep;
@@ -39,7 +42,7 @@ namespace FiresMounts
         private float _footFxDist, _lastFootFx;
         private static bool _footFxLogged;
 
-        // 30s ride-summary accumulators (VerboseLog-gated) — replace the old per-0.5s RIDE/CONTACT log spam. Sampled
+        // 30s ride-summary accumulators (VerboseLog-gated) instead of per-tick log spam. Sampled
         // per LateUpdate while ridden; one banner every 30s and one on dismount, then reset. Owner-only.
         private float _mvWindow, _mvSpeedSum, _mvSpeedMax, _mvDist, _mvGaitLo = 999f, _mvGaitHi;
         private int _mvSamples, _mvGround, _mvStuck, _mvJumps, _mvRun;
@@ -59,11 +62,24 @@ namespace FiresMounts
         // Above it we scale global playback so a faster-than-gallop config speed still keeps its hooves matched.
         private const float TopBlendSpeed = 10f;
 
+        // Our live controllers by their Character and ZSyncAnimation: the UpdateWalking and ZSyncAnimation.SetFloat prefixes run for
+        // EVERY character every frame, so they use a dictionary lookup instead of GetComponent.
+        internal static readonly System.Collections.Generic.Dictionary<Character, FiresMountController> ByCharacter = new System.Collections.Generic.Dictionary<Character, FiresMountController>();
+        internal static readonly System.Collections.Generic.Dictionary<ZSyncAnimation, FiresMountController> ByZanim = new System.Collections.Generic.Dictionary<ZSyncAnimation, FiresMountController>();
+
+        private void OnDestroy()
+        {
+            if (_character != null) ByCharacter.Remove(_character);
+            if (_zanim != null) ByZanim.Remove(_zanim);
+        }
+
         private void Awake()
         {
             _character = GetComponent<Character>();
             _nview = GetComponent<ZNetView>();
             _zanim = GetComponent<ZSyncAnimation>();
+            if (_character != null) ByCharacter[_character] = this;
+            if (_zanim != null) ByZanim[_zanim] = this;
             _anim = GetComponentInChildren<Animator>(true);
             _ownColliders = GetComponentsInChildren<Collider>(true);
             _sadle = GetComponentInChildren<Sadle>(true);
@@ -86,7 +102,7 @@ namespace FiresMounts
         }
 
         // Sample this frame into the 30s ride-summary accumulators (VerboseLog-gated). Emits one banner every 30s
-        // while ridden and one on dismount, then resets — the clean replacement for the old per-tick RIDE/CONTACT spam.
+        // while ridden and one on dismount, then resets.
         private void MovementSample()
         {
             if (_character == null) return;
@@ -208,8 +224,11 @@ namespace FiresMounts
         {
             if (_character == null || _nview == null || !_nview.IsValid() || !_nview.IsOwner()) return;
             float floor = MountConfig.GaitFloor.Value;
-            float walk = Mathf.Max(floor, MountConfig.WalkSpeed.Value);
-            float run = Mathf.Max(walk, MountConfig.RunSpeed.Value);
+            // +1.5% a mount level (MountProgress), on top of the configured walk / run.
+            if (_progress == null) _progress = GetComponent<MountProgress>();
+            float levelMul = _progress != null ? _progress.SpeedMul : 1f;
+            float walk = Mathf.Max(floor, MountConfig.WalkSpeed.Value * levelMul);
+            float run = Mathf.Max(walk, MountConfig.RunSpeed.Value * levelMul);
             if (_walkMode)
             {
                 // hold the WALK gait: the blend's walk child sits at 1/6 of the normalized range (7 evenly spaced
@@ -231,7 +250,7 @@ namespace FiresMounts
 
         // The gait blend runs on a NORMALIZED parameter (idle 0 -> sprint 1; the blend tree uses automatic 0..1
         // thresholds). Vanilla UpdateWalking writes RAW m/s into forward_speed, so at any RunSpeed above ~1 the blend
-        // pins to sprint (that's why "anything over 10" was always the sprint clip). Re-map raw speed to speed/RunSpeed
+        // pins to sprint. Re-map raw speed to speed/RunSpeed
         // so the gaits spread across the WHOLE configured range: walk/trot/canter below, sprint only at the very top.
         // Called from the ZSyncAnimation.SetFloat prefix so the animator AND the synced ZDO carry the normalized value.
         public float NormalizeForwardSpeed(float raw)
@@ -258,20 +277,20 @@ namespace FiresMounts
                 // NOT in vanilla's dismount set (jump/attack/dodge), so it's a free rein control. Detect the rising
                 // edge from the HELD state ourselves (the way vanilla reads crouch, PlayerController.cs:97) instead of
                 // GetButtonDown: the down-edge can be consumed elsewhere in the frame while mounted, which silently
-                // swallowed the tap (the log showed zero toggles even mid-ride). GetButton tracks whatever key the
+                // swallows the tap. GetButton tracks whatever key the
                 // player has bound to Crouch, so a rebind still works.
-                bool crouchHeld = ZInput.instance != null && ZInput.GetButton("Crouch");
+                bool crouchHeld = ZInput.instance != null && !TypingGate.Typing() && ZInput.GetButton("Crouch");
                 if (MountConfig.VerboseLog.Value && crouchHeld && !_lastCrouchHeld)
-                    FiresMountsPlugin.Log.LogInfo($"WALKMODE input: crouchHeld=1 down={(ZInput.instance != null && ZInput.GetButtonDown("Crouch"))} riding=1");
+                    FiresMountsPlugin.Log.LogDebug($"WALKMODE input: crouchHeld=1 down={(ZInput.instance != null && ZInput.GetButtonDown("Crouch"))} riding=1");
                 if (crouchHeld && !_lastCrouchHeld)
                 {
                     _walkMode = !_walkMode;
                     if (MountConfig.VerboseLog.Value)
-                        FiresMountsPlugin.Log.LogInfo($"WALKMODE toggle -> {_walkMode} on '{_character?.name}' owner={(_nview != null && _nview.IsValid() ? _nview.IsOwner().ToString() : "n/a")}");
+                        FiresMountsPlugin.Log.LogDebug($"WALKMODE toggle -> {_walkMode} on '{_character?.name}' owner={(_nview != null && _nview.IsValid() ? _nview.IsOwner().ToString() : "n/a")}");
                     p.Message(MessageHud.MessageType.TopLeft, _walkMode ? "Walk mode — tap C to release" : "Walk mode off");
                 }
                 _lastCrouchHeld = crouchHeld;
-                if (Time.time - _rideSince > 0.5f && ZInput.instance != null && ZInput.GetButtonDown("Use"))
+                if (Time.time - _rideSince > 0.5f && ZInput.instance != null && !TypingGate.Typing() && ZInput.GetButtonDown("Use"))
                 {
                     p.StopDoodadControl();
                     PlaceRiderBeside(p);
@@ -313,6 +332,8 @@ namespace FiresMounts
             try
             {
                 Vector3 spot = _character.transform.position + _character.transform.right * 1.6f;
+                // A13 ring: onto the ring's floor beside the horse, along the ring's up.
+                if (RingGround.InRing(spot, out Vector3 ringUp) && RingGround.Floor(spot + ringUp * 2f, out Vector3 f, out Vector3 u)) spot = f + u * 0.1f;
                 p.transform.position = spot;
                 if (p.m_body != null) { p.m_body.linearVelocity = Vector3.zero; p.m_body.useGravity = true; }
                 p.m_maxAirAltitude = spot.y;   // cancel the (now-removed) drop so no fall damage
@@ -369,8 +390,8 @@ namespace FiresMounts
             }
         }
 
-        // The Asksvin's own attack damages, read once from its first default attack item ("same attack damage as the
-        // asksvins" — it IS a cloned Asksvin). Fallback ≈ its bite if the prefab/item shape ever changes.
+        // The Asksvin's own attack damages, read once from its first default attack item (the horse matches the
+        // Asksvin's damage; it IS a cloned Asksvin). Fallback ≈ its bite if the prefab/item shape ever changes.
         private static HitData.DamageTypes? s_rearDamages;
         private static HitData.DamageTypes RearDamages()
         {
@@ -418,6 +439,7 @@ namespace FiresMounts
         private void FootFxTick()
         {
             if (!MountConfig.FootstepFX.Value) return;
+            if (MountConfig.GaitLoops.Value) return;   // the loops carry their own hoof hits; vanilla steps on top doubled them
             if (_footStep == null) { _footStep = GetComponent<FootStep>(); if (_footStep == null) return; }
             if (!_footFxReady) { _footFxReady = EnsureFootEffects(); if (!_footFxReady) return; }
             if (_nview == null || !_nview.IsValid() || !_nview.IsOwner()) return;   // owner drives; receivers just handle RPC_Step
@@ -452,7 +474,7 @@ namespace FiresMounts
                     return false;
                 }
                 _footStep.m_effects = pfs.m_effects;
-                if (!_footFxLogged) { _footFxLogged = true; FiresMountsPlugin.Log.LogInfo($"[FiresMounts] footstep FX ready: copied {pfs.m_effects.Count} player step-effects."); }
+                if (!_footFxLogged) { _footFxLogged = true; FiresMountsPlugin.Log.LogDebug($"[FiresMounts] footstep FX ready: copied {pfs.m_effects.Count} player step-effects."); }
                 return true;
             }
             catch { return false; }
@@ -470,9 +492,25 @@ namespace FiresMounts
                     _footAudio = MountLoopSource.Attach(gameObject);
             }
             if (_footAudio == null || _anim == null || _character == null) return;
+            if (!MountConfig.GaitLoops.Value) { _footAudio.SetVolume(0f); _footAudio.Stop(); return; }
             float norm = Mathf.Clamp01(_anim.GetFloat("forward_speed"));   // synced 0..1 gait (see NormalizeForwardSpeed)
-            if (norm <= 0.06f || !_character.IsOnGround()) { _footAudio.SetVolume(0f); _footAudio.Stop(); return; }
-            string gait = norm < 0.35f ? "walk" : (norm < 0.7f ? "trot" : "run");
+            // Echo fix: a one-frame ground-contact flicker or a speed dip would Stop+Play the loop, restarting
+            // the clip from its start over the old tail. Only stop after 0.3 s of stillness/air; keep playing through blips.
+            if (norm <= 0.06f || !_character.IsOnGround())
+            {
+                if (_audioQuietSince < 0f) _audioQuietSince = Time.time;
+                if (Time.time - _audioQuietSince >= 0.3f) { _footAudio.SetVolume(0f); _footAudio.Stop(); }
+                return;
+            }
+            _audioQuietSince = -1f;
+            // Hysteresis: the gait clip only changes 0.05 past a threshold, so speed jitter at a boundary can't swap
+            // (and restart) the clip every frame.
+            float up = _gaitClip == "walk" ? 0.40f : 0.75f, down = _gaitClip == "run" ? 0.65f : 0.30f;
+            string gait = _gaitClip;
+            if (gait == null) gait = norm < 0.35f ? "walk" : (norm < 0.7f ? "trot" : "run");
+            else if (gait != "run" && norm >= up) gait = gait == "walk" && norm < 0.75f ? "trot" : "run";
+            else if (gait != "walk" && norm <= down) gait = gait == "run" && norm > 0.30f ? "trot" : "walk";
+            _gaitClip = gait;
             object clip = MountAudio.GetClip(gait) ?? MountAudio.GetClip("walk");
             if (clip == null) return;
             _footAudio.SetClip(clip);
@@ -482,7 +520,7 @@ namespace FiresMounts
         }
 
         // Diagnostic (VerboseLog only): once/sec while the LOCAL player rides THIS horse, dump the numbers that decide
-        // the gait-blend question — the animator's actual forward_speed param, my commanded gait speed, the physics
+        // the gait-blend question — the animator's actual forward_speed param, the commanded gait speed, the physics
         // velocity, the current state, and the two top-weighted blend clips. If animFwd sweeps 0..10 but clips stay on
         // one gait, the blend tree is broken; if animFwd itself stays binary, forward_speed isn't reaching the animator.
         private float _animDiagT = -1f;
@@ -504,7 +542,7 @@ namespace FiresMounts
                 if (e.weight > w1) { c2 = c1; w2 = w1; c1 = e.clip.name; w1 = e.weight; }
                 else if (e.weight > w2) { c2 = e.clip.name; w2 = e.weight; }
             }
-            FiresMountsPlugin.Log.LogInfo($"ANIMDIAG owner={_nview.IsOwner()} walkMode={_walkMode} vel={vel:0.0} gait={_gaitSpeed:0.0} animFwd={animFwd:0.0} " +
+            FiresMountsPlugin.Log.LogDebug($"ANIMDIAG owner={_nview.IsOwner()} walkMode={_walkMode} vel={vel:0.0} gait={_gaitSpeed:0.0} animFwd={animFwd:0.0} " +
                 $"moveDir2={_character.m_moveDir.sqrMagnitude:0.00} run={_character.m_run} " +
                 $"state={(st.IsName("Movement") ? "Movement" : "0x" + st.fullPathHash.ToString("X"))} clips=[{c1}:{w1:0.00} {c2}:{w2:0.00}] aspd={_anim.speed:0.00}");
         }

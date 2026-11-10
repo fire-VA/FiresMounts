@@ -14,16 +14,17 @@ namespace FiresMounts
     /// so it's only ever hit by aiming at its small sphere. We therefore retarget Tameable itself: hover shows the
     /// ride prompt, and Use delegates to the Sadle mount RPC.
     ///
-    /// Scoped to our mounts (FiresMountController) AND only while saddled — an unsaddled Fires mount, a vanilla Lox,
-    /// and any other mod's Tameable keep their normal pet/tame behaviour. Alt+Use (rename) is left vanilla, and the
-    /// saddle's own sphere still removes the saddle via Alt+Use.
+    /// Scoped to our mounts (the horse, the flyers and the Mini Fader) AND only while
+    /// saddled — an unsaddled Fires mount (E = follow / stay), a vanilla Lox, and any other mod's Tameable keep their normal
+    /// pet/tame behaviour. Alt+Use (rename) is left vanilla, and the saddle's own sphere still removes the saddle via Alt+Use.
     /// </summary>
     internal static class FiresMountHover
     {
         internal static bool IsOurSaddledMount(Tameable t)
         {
             if (t == null || t.m_saddle == null) return false;
-            if (t.GetComponent<FiresMountController>() == null) return false;   // our mounts only
+            if (t.GetComponent<FiresMountController>() == null && t.GetComponent<FiresFlyerFlight>() == null
+                && t.GetComponent<FiresFaderRide>() == null) return false;   // our mounts only
             var nv = t.GetComponent<ZNetView>();
             return nv != null && nv.IsValid() && nv.GetZDO().GetBool(ZDOVars.s_haveSaddleHash);
         }

@@ -12,8 +12,7 @@ namespace FiresMounts
     /// (Humanoid/MonsterAI/Tameable/Sadle/ZSync*) can't be serialized into an AssetBundle, so we AddComponent
     /// them here and SEED their tuning from the live vanilla Lox prefab via reflection (safe scalar/enum fields
     /// only — never Lox's asset references), then override the horse-specific bits. This is the "scratch-build
-    /// reusing vanilla components" path: our own prefab, vanilla-tested riding/taming behaviour. See
-    /// reference_vanilla_mount_build.
+    /// reusing vanilla components" path: our own prefab, vanilla-tested riding/taming behaviour.
     /// </summary>
     internal static class MountFactory
     {
@@ -22,7 +21,7 @@ namespace FiresMounts
         private static int s_texturesBound;
 
         // Re-apply slider-tunable values to the registered prefabs AND every live mount instance. Wired to the
-        // configs' SettingChanged (Compose only runs at boot — without this, sliders did nothing until restart).
+        // configs' SettingChanged (Compose only runs at boot — without this, sliders would do nothing until restart).
         public static void ApplyLiveTuning()
         {
             try
@@ -36,11 +35,8 @@ namespace FiresMounts
                     }
                 if (ZNetScene.instance != null)
                 {
-                    foreach (var name in new[] { MountNames.HorsePrefab, MountNames.RefabHorsePrefab })
-                    {
-                        var p = ZNetScene.instance.GetPrefab(name);
-                        if (p != null) TuneOne(p);
-                    }
+                    var p = ZNetScene.instance.GetPrefab(MountNames.HorsePrefab);
+                    if (p != null) TuneOne(p);
                 }
             }
             catch (Exception ex) { Debug.LogWarning($"[FiresMounts] live tuning failed: {ex.Message}"); }
@@ -70,10 +66,22 @@ namespace FiresMounts
         // so we can confirm from the log that the bundle deserialized the Valheim components in-game.
         private static bool ComposeRuntimeOnly(GameObject horse)
         {
-            FiresMountsPlugin.Log.LogInfo($"[FiresMounts] AUTHORED '{horse.name}': Humanoid={horse.GetComponent<Humanoid>() != null} " +
+            FiresMountsPlugin.Log.LogDebug($"[FiresMounts] AUTHORED '{horse.name}': Humanoid={horse.GetComponent<Humanoid>() != null} " +
                 $"Tameable={horse.GetComponent<Tameable>() != null} Sadle={horse.GetComponentInChildren<Sadle>(true) != null} " +
                 $"MonsterAI={horse.GetComponent<MonsterAI>() != null} FootStep={horse.GetComponent<FootStep>() != null} ZNetView={horse.GetComponent<ZNetView>() != null}");
+            {
+                var bai = horse.GetComponent<MonsterAI>();
+                var bhum = horse.GetComponent<Humanoid>();
+                if (bai != null && bhum != null)
+                    FiresMountsPlugin.Log.LogDebug($"[FiresMounts] AUTHORED '{horse.name}' AI: faction={bhum.m_faction} view={bai.m_viewRange:0} alert={bai.m_alertRange:0} " +
+                        $"hear={bai.m_hearRange:0} huntPlayer={bai.m_enableHuntPlayer} foods={(bai.m_consumeItems?.Count ?? 0)} consumeSearch={bai.m_consumeSearchRange:0.0} (baked; calmed next)");
+                if (bai != null) CalmAI(bai);   // the authored path skipped this, so a baked horse kept Lox senses and would not tame beside you
+                try { ConfigureFood(horse); } catch { }
+            }
             if (horse.GetComponent<FiresMountController>() == null) horse.AddComponent<FiresMountController>();
+            if (horse.GetComponent<MountProgress>() == null) horse.AddComponent<MountProgress>();   // levels + stamina
+            if (horse.GetComponent<MountVariant>() == null) horse.AddComponent<MountVariant>();     // colour variants
+            if (horse.GetComponent<MountSaddleLook>() == null) horse.AddComponent<MountSaddleLook>();   // saddle dyes
             if (horse.name.StartsWith(MountNames.HorsePrefab) && horse.GetComponent<FiresMountCoat>() == null)
                 horse.AddComponent<FiresMountCoat>();
             var tame = horse.GetComponent<Tameable>();
@@ -132,6 +140,25 @@ namespace FiresMounts
             }
         }
 
+        // Calm horse: never alerted, never flees or hunts, no wander - so it eats and tames with the player
+        // right beside it (vanilla Tameable/MonsterAI skip eating + the taming countdown while alerted). Food search
+        // (MonsterAI.FindClosestConsumableItem) is a radius scan, not sight, so zero senses still find the food.
+        internal static void CalmAI(MonsterAI ai)
+        {
+            ai.m_alertRange = 0f;
+            ai.m_viewRange = 0f;
+            ai.m_hearRange = 0f;
+            ai.m_randomMoveInterval = 0f;
+            ai.m_randomMoveRange = 0f;
+            ai.m_randomCircleInterval = 0f;
+            ai.m_fleeIfHurtWhenTargetCantBeReached = false;
+            ai.m_fleeIfNotAlerted = false;
+            ai.m_fleeIfLowHealth = 0f;
+            ai.m_enableHuntPlayer = false;
+            ai.m_aggravatable = false;
+            ai.m_attackPlayerObjects = false;
+        }
+
         public static bool Compose(GameObject horse)
         {
             if (horse == null) return false;
@@ -151,45 +178,43 @@ namespace FiresMounts
                 return false;
             }
             // NOTE: model orientation is BAKED (FiresMountBuilder.ComputeForwardRotation) — no runtime rotation here.
-            // A runtime localRotation set does not hold and caused the sprint-in-place + 90-spin-on-jump.
+            // A runtime localRotation set does not hold and causes a sprint-in-place + 90-spin-on-jump.
 
             // NO runtime scale. Setting transform.localScale here (after Character/Rigidbody already initialized at
-            // scale 1) left the rigidbody's inertia tensor + Character's cached m_collider at scale-1 while the
-            // geometry was 1.4x — a mismatched body that pinned on the ground (moved only mid-jump). The 1.4x size is
-            // now BAKED into the prefab root in FiresMountBuilder, so every component initializes consistent at 1.4.
+            // scale 1) leaves the rigidbody's inertia tensor + Character's cached m_collider at scale-1 while the
+            // geometry is 1.4x — a mismatched body that pins on the ground (moves only mid-jump). The 1.4x size is
+            // BAKED into the prefab root in FiresMountBuilder, so every component initializes consistent at 1.4.
 
             // ── physics ─────────────────────────────────────────────────────────────
-            // Rigidbody at STRICT vanilla-creature parity (Lox: mass 60, no interpolation, discrete collision).
-            // Interpolation was a self-inflicted wound: the body renders between physics steps while the rider
-            // hangs off an animation-time bone — permanent micro-oscillation. Vanilla creatures never interpolate.
+            // Rigidbody seeded from the Lox (mass 60, discrete collision), then the horse's own values below.
             var loxRb = lox.GetComponent<Rigidbody>();
             var rb = Get<Rigidbody>(horse);
             if (loxRb != null) CopySafe(loxRb, rb);
             rb.mass = 80f;   // mm_horse_black_mount value (recipe)
-            rb.linearDamping = 0f;      // cookie's exact rigidbody — CopySafe was inheriting Lox's drag, unmatched
+            rb.linearDamping = 0f;      // the MagicalMounts horse's rigidbody; CopySafe would inherit the Lox's drag
             rb.angularDamping = 0.05f;
             rb.useGravity = true;
             rb.isKinematic = false;
             rb.constraints = RigidbodyConstraints.FreezeRotation;
             rb.collisionDetectionMode = CollisionDetectionMode.Discrete;
-            // EVIDENCE (tick trace 2026-07-02): without interpolation the body advances only on 50Hz physics
+            // Without interpolation the body advances only on 50Hz physics
             // ticks and renders frozen on in-between frames — at 100+fps that's the move-freeze-move jerk the
             // rider feels as "snapping at every hoofbeat". Interpolate renders the body smoothly between ticks.
             rb.interpolation = RigidbodyInterpolation.Interpolate;
 
-            // COOKIE'S PROVEN LAYOUT (MagicalMounts mm_horse, read from his Unity project 2026-07). The root capsule
+            // The proven MagicalMounts mm_horse collider layout. The root capsule
             // IS Valheim's m_collider (GetComponent, root) but it's SHRUNK to a nub parked UP in the body (center
             // y=1.6, r0.2, height0) — it satisfies GetComponent<CapsuleCollider>() and does NO ground contact. The
-            // FrontLeg/BackLeg capsules reach the feet and do the actual contact. Our old single fat pill (r0.5 h2.0,
-            // bottom at the ground) was the wedge that pinned forward movement while grounded — replaced here.
+            // FrontLeg/BackLeg capsules reach the feet and do the actual contact. A single fat pill (r0.5 h2.0,
+            // bottom at the ground) wedges and pins forward movement while grounded.
             var cap = Get<CapsuleCollider>(horse);
             cap.center = new Vector3(0f, 1.6f, 0.7067447f);
             cap.radius = 0.2f;
             cap.height = 0f;
             cap.direction = 1;
 
-            // Ground contact = the leg capsules. FrontLeg is cookie's EXACT values; BackLeg reuses them with Z
-            // mirrored to the rear (his multi-select hid the back Z/height — refine from a single-select shot). Local
+            // Ground contact = the leg capsules. FrontLeg uses the reference layout's exact values; BackLeg reuses them
+            // with Z mirrored to the rear. Local
             // pos + capsule are forced here so whatever the bake put on these nodes doesn't matter.
             ConfigureLeg(tf, "FrontLeg", new Vector3(0f, -0.1f, 0f), new Vector3(0f, 0.682933f, 1.45f), 0.2131548f, 1.160477f);
             ConfigureLeg(tf, "BackLeg", new Vector3(0f, -0.1f, 0f), new Vector3(0f, 0.682933f, -1.45f), 0.2131548f, 1.160477f);
@@ -245,18 +270,7 @@ namespace FiresMounts
             // blueprint lobotomy: the horse NEVER moves on its own — no wander, no flee, no alert. Only the
             // vanilla Sadle doodad control (and taming consume) drives it. This is what keeps a ridden/parked
             // horse planted instead of fighting the rider.
-            ai.m_alertRange = 0f;
-            ai.m_viewRange = 0f;
-            ai.m_hearRange = 0f;
-            ai.m_randomMoveInterval = 0f;
-            ai.m_randomMoveRange = 0f;
-            ai.m_randomCircleInterval = 0f;
-            ai.m_fleeIfHurtWhenTargetCantBeReached = false;
-            ai.m_fleeIfNotAlerted = false;
-            ai.m_fleeIfLowHealth = 0f;
-            ai.m_enableHuntPlayer = false;
-            ai.m_aggravatable = false;
-            ai.m_attackPlayerObjects = false;
+            CalmAI(ai);
             ai.m_pathAgentType = (Pathfinding.AgentType)4;   // blueprint value (Lox's TrollSize differs)
 
             // ── taming + saddle ──────────────────────────────────────────────────────
@@ -265,7 +279,7 @@ namespace FiresMounts
             if (loxTame != null)
             {
                 CopySafe(loxTame, tame);
-                tame.m_saddleItem = loxTame.m_saddleItem;   // reuse SaddleLox item for MVP (craftable, works today)
+                tame.m_saddleItem = loxTame.m_saddleItem;   // reuse the SaddleLox item (craftable)
             }
             // Robustness: if the Lox reference didn't hand over the saddle item (null loxTame, or a mid-session command
             // spawn where the copy missed), pull SaddleLox straight from ObjectDB so Tameable.UseItem's m_saddleItem
@@ -297,8 +311,8 @@ namespace FiresMounts
             tame.m_saddle = sadle;
 
             // NATIVE materials: the bundle bakes Standard-shader materials with textures serialized in — the horse
-            // renders as-authored with NO runtime shader/texture swapping (4 rounds of swap fixes were
-            // nondeterministic thanks to the same-name stripped shader in our own bundle). Only the coat TINT is
+            // renders as-authored with NO runtime shader/texture swapping (swapping is
+            // nondeterministic because of the same-name stripped shader in our own bundle). Only the coat TINT is
             // applied here (a plain _Color set on the baked material — no shader involved).
             Color coat = ParseCoatColor();
             if (coat != Color.white)
@@ -339,10 +353,13 @@ namespace FiresMounts
             // polish layer (mounted jump; mount/dismount intro anims once baked). Guarded, opt-in via config.
             if (horse.GetComponent<FiresMountController>() == null) horse.AddComponent<FiresMountController>();
             if (horse.GetComponent<FiresMountObstacleRoller>() == null) horse.AddComponent<FiresMountObstacleRoller>();
+            if (horse.GetComponent<MountProgress>() == null) horse.AddComponent<MountProgress>();   // levels + stamina
+            if (horse.GetComponent<MountVariant>() == null) horse.AddComponent<MountVariant>();     // colour variants
+            if (horse.GetComponent<MountSaddleLook>() == null) horse.AddComponent<MountSaddleLook>();   // saddle dyes
             // randomized coat: rolls once per spawned instance (ZDO-persisted), swapped onto the body mesh in Start.
             // ONLY the HAP FiresHorse — the loadout is built around HAP's coat set + mane/tail variant meshes.
-            // FiresHorse2 is the verbatim reconstructed reference (cookie's single mane/tail + baked black coat);
-            // running the loadout on it would hide his one mane/tail, so it ships exactly as authored.
+            // FiresHorse2 is the verbatim reconstructed reference (a single mane/tail + baked black coat);
+            // running the loadout on it would hide its one mane/tail, so it ships exactly as authored.
             if (horse.name == MountNames.HorsePrefab && horse.GetComponent<FiresMountCoat>() == null)
                 horse.AddComponent<FiresMountCoat>();
 
@@ -514,7 +531,7 @@ namespace FiresMounts
             foreach (Transform c in t) SetLayerRecursive(c, layer);
         }
 
-        // Places a leg ground-contact capsule (cookie's Colliders/FrontLeg|BackLeg): sets the node's local position +
+        // Places a leg ground-contact capsule (the reference layout's Colliders/FrontLeg|BackLeg): sets the node's local position +
         // the capsule geometry, forces it SOLID and enabled. Creates the node under Colliders if the bake lacks it.
         static void ConfigureLeg(Transform root, string name, Vector3 localPos, Vector3 center, float radius, float height)
         {

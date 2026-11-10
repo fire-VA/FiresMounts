@@ -2,8 +2,8 @@ using UnityEngine;
 
 namespace FiresMounts
 {
-    /// <summary>Console tools. Registered once in Setup. The dev spawn runs on host/server (so the ZDO persists);
-    /// remote-client routing is added with the full creature pipeline (see task: runtime composer).</summary>
+    /// <summary>Console tools (admin / cheat commands). Registered once in Setup. The spawn commands run on the
+    /// local peer; use them on the host or server so the ZDO persists.</summary>
     internal static class MountCommands
     {
         private static bool _registered;
@@ -12,14 +12,15 @@ namespace FiresMounts
         {
             if (_registered) return;
             _registered = true;
+            RegisterFlyerCommands();
 
             new Terminal.ConsoleCommand("firesmounts_spawn",
-                "Spawn a horse in front of you. Args: 2|refab|cookie = the reconstructed reference horse (FiresHorse2, cookie's proven body in OUR bundle), default = FiresHorse (HAP), [number] = forward distance.",
+                "Spawn a horse (FiresHorse) in front of you. Args: [number] = forward distance (default 4 m).",
                 (Terminal.ConsoleEventArgs args) =>
                 {
                     string msg = SpawnHorse(args);
                     args.Context?.AddString("[FiresMounts] " + msg);
-                });
+                }, isCheat: true);   // admin tools, as the help lists them
 
             new Terminal.ConsoleCommand("firesmounts_tame",
                 "Instantly tame the nearest mount (does NOT saddle it). Optional name filter, e.g. firesmounts_tame horse.",
@@ -28,15 +29,15 @@ namespace FiresMounts
                     string filter = args.Args != null && args.Args.Length > 1 ? args.Args[1] : null;
                     string msg = TameNearest(filter);
                     args.Context?.AddString("[FiresMounts] " + msg);
-                });
+                }, isCheat: true);
 
             new Terminal.ConsoleCommand("firesmounts_saddle",
-                "Spawn a saddle (vanilla SaddleLox) at your feet. Pick it up, then with it in your inventory press E on your TAMED horse to put it on.",
+                "Spawn a saddle at your feet: the Sky saddle next to a flyer, else the vanilla SaddleLox for the horse. Pick it up, then with it in your inventory press E on your TAMED mount to put it on.",
                 (Terminal.ConsoleEventArgs args) =>
                 {
                     string msg = GiveSaddle();
                     args.Context?.AddString("[FiresMounts] " + msg);
-                });
+                }, isCheat: true);
 
             new Terminal.ConsoleCommand("firesmounts_diag",
                 "Dump the nearest FiresHorse state (materials/shader/textures, saddle+ride wiring, owner, physics) to the log.",
@@ -47,7 +48,133 @@ namespace FiresMounts
                 });
         }
 
-        private static Character FindNearestHorse(string filter = null)
+        private static void RegisterFlyerCommands()
+        {
+            new Terminal.ConsoleCommand("firesmounts_spawnflyer",
+                "Spawn a creature mount (on the ground) in front of you. Args: [moder|drake|fader|eikthyr|bjorn|brute|serpent|bonemaw] [number] = forward distance (default 6 m).",
+                (Terminal.ConsoleEventArgs args) =>
+                {
+                    string which = args.Args != null && args.Args.Length > 1 ? args.Args[1] : "moder";
+                    bool Is(string word) => which.IndexOf(word, System.StringComparison.OrdinalIgnoreCase) >= 0;
+                    string prefab = Is("drake") ? MountNames.DrakePrefab
+                        : Is("fader") ? MountNames.MiniFaderPrefab
+                        : Is("eikthyr") ? MountNames.EikthyrPrefab
+                        : Is("bjorn") ? MountNames.BjornPrefab
+                        : Is("brute") ? MountNames.BrutePrefab
+                        : Is("bonemaw") ? MountNames.BonemawPrefab
+                        : Is("serpent") ? MountNames.SerpentPrefab
+                        : MountNames.MiniModerPrefab;
+                    args.Context?.AddString("[FiresMounts] " + SpawnPrefab(prefab, args, 6f));
+                }, isCheat: true);
+
+            new Terminal.ConsoleCommand("firesmounts_hatch",
+                "Finish the nearest mount nest's incubation now (hatches its Moder, Fader or Drake egg).",
+                (Terminal.ConsoleEventArgs args) =>
+                {
+                    args.Context?.AddString("[FiresMounts] " + HatchNearest());
+                }, isCheat: true);
+
+            // Levels + stamina: test setup on the nearest mount.
+            new Terminal.ConsoleCommand("firesmounts_level",
+                "Set the nearest mount's level (1-20; XP back to 0). Args: <level> [nameFilter].",
+                (Terminal.ConsoleEventArgs args) =>
+                {
+                    int level = args.Args != null && args.Args.Length > 1 && int.TryParse(args.Args[1], out int l) ? l : 1;
+                    var p = NearestProgress(args.Args != null && args.Args.Length > 2 ? args.Args[2] : null);
+                    args.Context?.AddString("[FiresMounts] " + (p == null ? "no mount nearby." : p.SetLevel(level)));
+                }, isCheat: true);
+
+            new Terminal.ConsoleCommand("firesmounts_xp",
+                "Give the nearest mount XP. Args: <amount> [nameFilter].",
+                (Terminal.ConsoleEventArgs args) =>
+                {
+                    float xp = args.Args != null && args.Args.Length > 1 && float.TryParse(args.Args[1], out float x) ? x : 0f;
+                    var p = NearestProgress(args.Args != null && args.Args.Length > 2 ? args.Args[2] : null);
+                    if (p != null) p.AddXp(xp, "console");
+                    args.Context?.AddString("[FiresMounts] " + (p == null ? "no mount nearby." : $"gave {xp:0} XP: " + p.Describe()));
+                }, isCheat: true);
+
+            // For invisible-body problems: every renderer of the nearest mount, with its state.
+            new Terminal.ConsoleCommand("firesmounts_renderers",
+                "List the nearest mount's renderers (enabled, active, materials, bounds). Optional name filter.",
+                (Terminal.ConsoleEventArgs args) =>
+                {
+                    var c = FindNearestMount(args.Args != null && args.Args.Length > 1 ? args.Args[1] : null);
+                    if (c == null) { args.Context?.AddString("[FiresMounts] no mount nearby."); return; }
+                    foreach (var r in c.GetComponentsInChildren<Renderer>(true))
+                    {
+                        var smr = r as SkinnedMeshRenderer;
+                        string mats = string.Join("/", System.Array.ConvertAll(r.sharedMaterials, m => m == null ? "NULL" : m.name + (m.shader != null ? "(" + m.shader.name + ")" : "")));
+                        string line = $"[FiresMounts] [Renderers] {c.name}: {r.GetType().Name} '{r.name}' enabled {r.enabled}, active {r.gameObject.activeInHierarchy}, "
+                            + $"visible {r.isVisible}, mats {mats}, bounds {r.bounds.size}{(smr != null ? $", mesh {(smr.sharedMesh != null ? smr.sharedMesh.name : "NULL")}, root {(smr.rootBone != null ? smr.rootBone.name : "NULL")}" : "")}";
+                        args.Context?.AddString(line);
+                        FiresMountsPlugin.Log.LogInfo(line);
+                    }
+                });
+
+            new Terminal.ConsoleCommand("firesmounts_mountinfo",
+                "The nearest mount's level, XP and stamina.",
+                (Terminal.ConsoleEventArgs args) =>
+                {
+                    var p = NearestProgress(args.Args != null && args.Args.Length > 1 ? args.Args[1] : null);
+                    args.Context?.AddString("[FiresMounts] " + (p == null ? "no mount nearby." : p.Describe()));
+                });
+
+            // The same call as the double tap on the whistle key, with the same checks (a whistle in the inventory, the cooldown).
+            new Terminal.ConsoleCommand("firesmounts_whistle",
+                "Whistle for the last mount you rode, as a double tap of [Mounts.Whistle] Key does (needs a Mount whistle in the inventory).",
+                (Terminal.ConsoleEventArgs args) =>
+                {
+                    var player = Player.m_localPlayer;
+                    var whistle = MountWhistle.Instance;
+                    args.Context?.AddString("[FiresMounts] " + (player == null ? "no local player." : whistle == null ? "the whistle is not installed." : whistle.Whistle(player, "console")));
+                });
+        }
+
+        private static MountProgress NearestProgress(string filter)
+        {
+            var c = FindNearestMount(filter);
+            return c != null ? c.GetComponent<MountProgress>() : null;
+        }
+
+        private static string HatchNearest()
+        {
+            var player = Player.m_localPlayer;
+            if (player == null) return "no local player.";
+            FiresNestIncubator best = null;
+            float bestDist = float.MaxValue;
+            foreach (var n in Object.FindObjectsByType<FiresNestIncubator>(FindObjectsSortMode.None))
+            {
+                float d = Vector3.Distance(n.transform.position, player.transform.position);
+                if (d < bestDist) { bestDist = d; best = n; }
+            }
+            if (best == null) return "no mount nest nearby.";
+            best.RequestHatchNow();
+            return $"asked the nest {bestDist:0.0} m away to hatch (no-op if it holds no egg).";
+        }
+
+        private static string SpawnPrefab(string prefabName, Terminal.ConsoleEventArgs args, float forward)
+        {
+            if (ZNet.instance == null || ZNetScene.instance == null) return "not in a world.";
+            GameObject prefab = ZNetScene.instance.GetPrefab(prefabName);
+            if (prefab == null) return $"'{prefabName}' NOT registered (Mounts.Flyers Enabled off, or its vanilla source was missing - see the log).";
+            var player = Player.m_localPlayer;
+            if (player == null) return "no local player.";
+            if (args.Args != null)
+                foreach (var s in args.Args)
+                    if (float.TryParse(s, out float f)) { forward = f; break; }
+            Vector3 dir = player.transform.forward; dir.y = 0f;
+            if (dir.sqrMagnitude < 0.01f) dir = Vector3.forward; else dir.Normalize();
+            Vector3 pos = player.transform.position + dir * forward;
+            if (ZoneSystem.instance != null && ZoneSystem.instance.GetGroundHeight(pos, out float gh)) pos.y = gh + 0.5f;
+            Object.Instantiate(prefab, pos, Quaternion.LookRotation(dir, Vector3.up));
+            return $"spawned {prefabName} at {pos}.";
+        }
+
+        // Our mounts: the horse, the flyers and the Mini Fader (not only "FiresHorse", so a filter like "moder" finds them).
+        private static bool IsMountPrefab(string pn) => MountNames.IsMount(pn);
+
+        private static Character FindNearestMount(string filter = null)
         {
             var player = Player.m_localPlayer;
             if (player == null) return null;
@@ -57,7 +184,7 @@ namespace FiresMounts
             {
                 if (c == null) continue;
                 string pn = global::Utils.GetPrefabName(c.gameObject);
-                if (!pn.StartsWith(MountNames.HorsePrefab)) continue;
+                if (!IsMountPrefab(pn)) continue;
                 if (!string.IsNullOrEmpty(filter) && pn.IndexOf(filter, System.StringComparison.OrdinalIgnoreCase) < 0) continue;
                 float d = Vector3.Distance(c.transform.position, player.transform.position);
                 if (d < bestDist) { bestDist = d; best = c; }
@@ -67,7 +194,7 @@ namespace FiresMounts
 
         private static string TameNearest(string filter = null)
         {
-            var best = FindNearestHorse(filter);
+            var best = FindNearestMount(filter);
             if (best == null) return string.IsNullOrEmpty(filter)
                 ? "no mount nearby — spawn one first."
                 : $"no mount matching '{filter}' nearby.";
@@ -86,28 +213,49 @@ namespace FiresMounts
         // the tamed horse holding it), exactly like a vanilla Lox. The saddle mesh on the horse stays hidden until
         // applied (FiresMountCoat), and the saddle item is the vanilla SaddleLox (tame.m_saddleItem). Spawned as a
         // world pickup at your feet so it works regardless of inventory space.
+        // Next to a flyer (the nearest mount within FlyerSaddleRange m) the saddle is the Sky saddle, the flyers' m_saddleItem.
+        private const float FlyerSaddleRange = 15f;
+
         private static string GiveSaddle()
         {
             var player = Player.m_localPlayer;
             if (player == null) return "no local player.";
             if (ObjectDB.instance == null) return "ObjectDB not ready.";
-            var prefab = ObjectDB.instance.GetItemPrefab("SaddleLox");
-            if (prefab == null) return "SaddleLox item not found in ObjectDB.";
+            var near = FindNearestMount();
+            bool flyer = near != null && Vector3.Distance(near.transform.position, player.transform.position) <= FlyerSaddleRange
+                         && !global::Utils.GetPrefabName(near.gameObject).StartsWith(MountNames.HorsePrefab);
+            string item = flyer ? MountNames.SkySaddleItem : "SaddleLox";
+            var prefab = ObjectDB.instance.GetItemPrefab(item);
+            if (prefab == null) return $"{item} item not found in ObjectDB.";
             Vector3 pos = player.transform.position + player.transform.forward * 1.2f + Vector3.up * 0.6f;
             Object.Instantiate(prefab, pos, Quaternion.identity);
-            return "spawned a saddle (SaddleLox) at your feet. Pick it up, then press E on your tamed horse to put it on.";
+            return flyer
+                ? $"spawned a Sky saddle ({item}) at your feet. Pick it up, then press E on your tamed flyer to put it on."
+                : "spawned a saddle (SaddleLox) at your feet. Pick it up, then press E on your tamed horse to put it on.";
         }
 
         private static string DiagNearest()
         {
-            var best = FindNearestHorse();
-            if (best == null) return "no FiresHorse nearby.";
+            var best = FindNearestMount();
+            if (best == null) return "no FiresMounts mount nearby.";
             var go = best.gameObject;
             var root = go.transform;
             Debug.Log("===== FiresMounts DIAG: " + go.name + " =====");
 
             var nview = best.GetComponent<ZNetView>();
             Debug.Log($"[diag] tamed={best.IsTamed()} valid={(nview != null && nview.IsValid())} owner={(nview != null && nview.IsValid() && nview.IsOwner())} haveSaddleZDO={(nview != null && nview.IsValid() && nview.GetZDO().GetBool(ZDOVars.s_haveSaddleHash))}");
+            // Taming evidence (for a mount that eats but never tames): what vanilla Tameable/MonsterAI gate on.
+            var tameC = go.GetComponent<Tameable>();
+            var aiC = go.GetComponent<MonsterAI>();
+            if (tameC != null && aiC != null && nview != null && nview.IsValid())
+            {
+                var zdo = nview.GetZDO();
+                string foods = aiC.m_consumeItems == null ? "null" : string.Join(",", aiC.m_consumeItems.ConvertAll(i => i != null ? i.name : "?"));
+                Debug.Log($"[diag] TAME hungry={tameC.IsHungry()} alerted={aiC.IsAlerted()} tameness={tameC.GetTameness()}% timeLeft={zdo.GetFloat(ZDOVars.s_tameTimeLeft, tameC.m_tamingTime):0} " +
+                          $"tamingTime={tameC.m_tamingTime:0} fedDuration={tameC.m_fedDuration:0} foods=[{foods}] consumeSearch={aiC.m_consumeSearchRange:0.0} consumeRange={aiC.m_consumeRange:0.0} " +
+                          $"faction={best.m_faction} view={aiC.m_viewRange:0} alert={aiC.m_alertRange:0} hear={aiC.m_hearRange:0} target={(aiC.GetTargetCreature() != null ? aiC.GetTargetCreature().name : "-")}");
+                Debug.Log($"[diag] COAT coat={zdo.GetInt("fires_coat", -1)} mane={zdo.GetInt("fires_mane", -1)} tail={zdo.GetInt("fires_tail", -1)}");
+            }
 
             // ── ORIENTATION: where the ROOT (movement) faces vs where the VISUAL (animator/bones) actually faces.
             // A non-zero yaw here IS the "moves sideways / faces 90 off" bug. Signed yaw about world-up, in degrees.
@@ -139,7 +287,7 @@ namespace FiresMounts
                     Debug.Log($"[diag] BONE '{bn}'->'{b.name}' localEuler={V(b.localRotation.eulerAngles)} yawVsRoot={Vector3.SignedAngle(rf, Flat(b.forward), Vector3.up):0.0} worldOff={V(root.InverseTransformPoint(b.position))}");
             }
 
-            // THE crux the user sees in ESP: where the VISIBLE horse points (spine axis Pelvis->Head) vs root.fwd
+            // THE crux seen in a debug ESP view: where the VISIBLE horse points (spine axis Pelvis->Head) vs root.fwd
             // (where physics/movement points). A ~90 here IS the collider-vs-visual mismatch, as one number.
             var pelvisB = FindDeepT(root, "Pelvis") ?? FindDeepT(root, "Spine");
             var headB = FindDeepT(root, "Head");
@@ -162,7 +310,7 @@ namespace FiresMounts
             // and EVERY collider — is it a trigger? what layer? and (for capsules) its world-space long axis, so a
             // leg capsule turned 90 to the side shows up. m_collider (Character's movement capsule) = the root one.
             var rbb = best.GetComponent<Rigidbody>();
-            Debug.Log($"[diag] PHYS onGround={best.IsOnGround()} vel={(rbb ? rbb.velocity.magnitude : 0f):0.00} rbRot={(rbb ? "free" : "-")} constraints={(rbb ? rbb.constraints.ToString() : "-")} animRootMotion={(anim != null && anim.applyRootMotion)}");
+            Debug.Log($"[diag] PHYS onGround={best.IsOnGround()} vel={(rbb ? rbb.linearVelocity.magnitude : 0f):0.00} rbRot={(rbb ? "free" : "-")} constraints={(rbb ? rbb.constraints.ToString() : "-")} animRootMotion={(anim != null && anim.applyRootMotion)}");
 
             // THE wedge answer: what the Character is actually standing/pinned on. m_groundContactNormal tilted off
             // straight-up = a horizontal wedge that kills forward velocity (only jump clears it). standingOn = the
@@ -174,7 +322,7 @@ namespace FiresMounts
             Vector3 gn = gnF != null ? (Vector3)gnF.GetValue(best) : Vector3.zero;
             bool gcOn = (bool)(typeof(Character).GetField("m_groundContact", NP)?.GetValue(best) ?? false);
             string standOn = lowest != null ? $"{lowest.transform.name} (rb={(lowest.attachedRigidbody ? lowest.attachedRigidbody.transform.name : "none")})" : "NULL";
-            Debug.Log($"[diag] WEDGE groundContact={gcOn} groundNormal={V(gn)} (y<1.0 = tilted = HORIZONTAL wedge) standingOn='{standOn}' bodyVel={(rbb ? V(rbb.velocity) : "-")}");
+            Debug.Log($"[diag] WEDGE groundContact={gcOn} groundNormal={V(gn)} (y<1.0 = tilted = HORIZONTAL wedge) standingOn='{standOn}' bodyVel={(rbb ? V(rbb.linearVelocity) : "-")}");
             foreach (var col in go.GetComponentsInChildren<Collider>(true))
             {
                 string extra = "";
@@ -227,21 +375,9 @@ namespace FiresMounts
             if (ZNetScene.instance == null) return "scene not ready.";
 
             string prefabName = MountNames.HorsePrefab;
-            if (args.Args != null && args.Args.Length > 1)
-            {
-                string a = args.Args[1].ToLowerInvariant();
-                if (a == "2" || a == "refab" || a == "cookie") prefabName = MountNames.RefabHorsePrefab;
-            }
             GameObject prefab = ZNetScene.instance.GetPrefab(prefabName);
             if (prefab == null)
-            {
-                bool horse = ZNetScene.instance.GetPrefab(MountNames.HorsePrefab) != null;
-                bool refab = ZNetScene.instance.GetPrefab(MountNames.RefabHorsePrefab) != null;
-                return $"'{prefabName}' NOT registered. Registered on this client: {MountNames.HorsePrefab}={horse} {MountNames.RefabHorsePrefab}={refab}. " +
-                       (horse || refab
-                           ? "Check the spelling (use '2' or 'refab' for the reconstructed horse)."
-                           : "firesmounts bundle did not load — restart and check the log for a bundle load error.");
-            }
+                return $"'{prefabName}' NOT registered: the firesmounts bundle did not load — restart and check the log for a bundle load error.";
 
             var player = Player.m_localPlayer;
             Vector3 pos;

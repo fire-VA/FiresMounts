@@ -46,8 +46,8 @@ namespace FiresMounts
         // prints colored by source name without a raw white stdout duplicate.
         private static void EmitHeader(string text)
         {
-            if (FiresMountsPlugin.Log != null) FiresMountsPlugin.Log.LogInfo(text);
-            else Debug.Log($"[FiresMounts] {text}");
+            if (FiresMountsPlugin.Log != null) FiresMountsPlugin.Log.LogDebug(text);
+            else FiresMountsPlugin.Log.LogDebug($"[FiresMounts] {text}");
         }
 
         private static Banner.Segment[][] ToSegments((string text, ConsoleColor color)[] lines)

@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
   <PropertyGroup>
@@ -54,7 +54,7 @@
       <Private>False</Private>
       </Reference>
     <Reference Include="FiresUnifiedCore">
-      <HintPath>..\..\FiresUnifiedCore\FiresUnifiedCore\bin\Release\FiresUnifiedCore.dll</HintPath>
+      <HintPath>..\..\_coreS_wishbone_core1042\FiresUnifiedCore\bin\Release\FiresUnifiedCore.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="assembly_guiutils">
@@ -69,6 +69,23 @@
     </Reference>
     <Reference Include="UnityEngine.PhysicsModule">
       <HintPath>..\..\..\..\..\..\..\Program Files (x86)\Steam\steamapps\common\Valheim\valheim_Data\Managed\UnityEngine.PhysicsModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.UI">
+      <HintPath>..\..\..\..\..\..\..\Program Files (x86)\Steam\steamapps\common\Valheim\valheim_Data\Managed\UnityEngine.UI.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UIModule">
+      <HintPath>..\..\..\..\..\..\..\Program Files (x86)\Steam\steamapps\common\Valheim\valheim_Data\Managed\UnityEngine.UIModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.TextRenderingModule">
+      <HintPath>..\..\..\..\..\..\..\Program Files (x86)\Steam\steamapps\common\Valheim\valheim_Data\Managed\UnityEngine.TextRenderingModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Unity.TextMeshPro">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\..\..\..\..\..\..\Program Files (x86)\Steam\steamapps\common\Valheim\valheim_Data\Managed\Unity.TextMeshPro.dll</HintPath>
+      <Private>False</Private>
     </Reference>
     <Reference Include="UnityEngine.AnimationModule">
       <HintPath>..\..\..\..\..\..\..\Program Files (x86)\Steam\steamapps\common\Valheim\valheim_Data\Managed\UnityEngine.AnimationModule.dll</HintPath>
@@ -87,7 +104,14 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Ascend.cs" />
+    <Compile Include="Modules\FlightKeysOwned.cs" />
+    <Compile Include="Modules\HeadlessTrim.cs" />
     <Compile Include="Modules\MountNames.cs" />
+    <Compile Include="Modules\MountSaddleDye.cs" />
+    <Compile Include="Modules\MountSummons.cs" />
+    <Compile Include="Modules\AboveWaterInteract.cs" />
+    <Compile Include="Modules\MountPillion.cs" />
+    <Compile Include="Modules\TypingGate.cs" />
     <Compile Include="Modules\MountConfig.cs" />
     <Compile Include="Modules\MountFactory.cs" />
     <Compile Include="Modules\ColliderBakeReader.cs" />
@@ -97,12 +121,28 @@
     <Compile Include="Modules\FiresMountJumpPatch.cs" />
     <Compile Include="Modules\MountCommands.cs" />
     <Compile Include="Modules\MountHelpContent.cs" />
+    <Compile Include="Modules\MountSpawns.cs" />
+    <Compile Include="Modules\FiresMountHoverPatch.cs" />
+    <Compile Include="Modules\FlyerFactory.cs" />
+    <Compile Include="Modules\FiresNestIncubator.cs" />
+    <Compile Include="Modules\FiresFlyerFollow.cs" />
+    <Compile Include="Modules\FiresFlyerFlight.cs" />
+    <Compile Include="Modules\FlyerFlightHints.cs" />
+    <Compile Include="Modules\MountCombat.cs" />
+    <Compile Include="Modules\FiresFaderRide.cs" />
+    <Compile Include="Modules\MountWhistle.cs" />
+    <Compile Include="Modules\RingGround.cs" />
+    <Compile Include="Modules\MountProgress.cs" />
+    <Compile Include="Modules\MountGear.cs" />
+    <Compile Include="Modules\SaddleFitFile.cs" />
+    <Compile Include="Modules\MountVariant.cs" />
     <Compile Include="Utilities\FiresLogger.cs" />
     <Compile Include="Utilities\FiresMountsBanner.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="firesmounts" Condition="Exists('$(MSBuildProjectDirectory)\firesmounts')" />
+    <EmbeddedResource Include="firesmountsgear" Condition="Exists('$(MSBuildProjectDirectory)\firesmountsgear')" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <PropertyGroup>

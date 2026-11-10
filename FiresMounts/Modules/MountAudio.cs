@@ -9,11 +9,11 @@ namespace FiresMounts
 {
     /// <summary>
     /// Gait audio for the horse. Our custom HAP clips have no vanilla "footstep" animation curve, so vanilla's FootStep
-    /// component can't fire — instead we play the user's cleanly-looping gait WAVs (walk/trot/run) on a spatial
+    /// component can't fire — instead we play cleanly-looping gait WAVs (walk/trot/run) on a spatial
     /// AudioSource attached to the horse, selected + shaped by the (already normalized) forward_speed we drive.
     ///
     /// The Unity AudioClip/AudioSource API is used by REFLECTION on purpose: a direct compile-time reference to
-    /// UnityEngine.AudioModule drags in netstandard 2.1 and breaks the net48 build (see reference_audio_reflection_net48 /
+    /// UnityEngine.AudioModule drags in netstandard 2.1 and breaks the net48 build (same approach as
     /// FiresCore.UI.PencilSfx). Clips load from BepInEx/config/FiresMountSounds/&lt;walk|trot|run&gt;.wav (16-bit PCM) so
     /// they can be swapped without a rebuild.
     /// </summary>

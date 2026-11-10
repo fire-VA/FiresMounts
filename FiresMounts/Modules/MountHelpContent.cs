@@ -15,7 +15,12 @@ namespace FiresMounts
 
             FiresCore.Help.HelpRegistry.RegisterSection(ModId, "", "Horses & Riding", 0, BuildOverview);
             FiresCore.Help.HelpRegistry.RegisterSection(ModId, "", "Riding Controls", 1, BuildControls);
-            FiresCore.Help.HelpRegistry.RegisterSection(ModId, "", "Admin & Config", 2, BuildAdmin, adminOnly: true);
+            FiresCore.Help.HelpRegistry.RegisterSection(ModId, "", "Flying Mounts", 2, BuildFlying);
+            FiresCore.Help.HelpRegistry.RegisterSection(ModId, "", "Mini Fader", 3, BuildFader);
+            FiresCore.Help.HelpRegistry.RegisterSection(ModId, "", "Beast Mounts", 4, BuildBeasts);
+            FiresCore.Help.HelpRegistry.RegisterSection(ModId, "", "Mount Whistle", 5, BuildWhistle);
+            FiresCore.Help.HelpRegistry.RegisterSection(ModId, "", "Mount Levels & Stamina", 6, BuildLevels);
+            FiresCore.Help.HelpRegistry.RegisterSection(ModId, "", "Admin & Config", 7, BuildAdmin, adminOnly: true);
         }
 
         private static void BuildOverview(FiresCore.Help.HelpContentWriter w)
@@ -40,7 +45,7 @@ namespace FiresMounts
             w.SubHeader("Looks");
             w.Paragraph("Every horse rolls its own coat (Brown, Gray, Gray2, Palomino, White), mane, " +
                 "and tail — and keeps them forever. Pin a specific look, tint (CoatColor hex), or size " +
-                "(HorseScale) under [Mounts.Body] in F8; changes apply live.");
+                "(HorseScale) under [Mounts.Body] in F1 > Config settings (Show advanced); changes apply live.");
         }
 
         private static void BuildControls(FiresCore.Help.HelpContentWriter w)
@@ -64,18 +69,114 @@ namespace FiresMounts
                 "config/FiresMountSounds/, volume under [Mounts.Audio]).");
         }
 
+        private static void BuildFlying(FiresCore.Help.HelpContentWriter w)
+        {
+            w.Header("Flying Mounts");
+            w.Paragraph("The mini Moder (hatched from a Moder egg in a mount nest) and the drake (from a Drake egg, which Mountain drakes " +
+                "sometimes drop, hatched the same way) carry a rider through the air. " +
+                "They wait on the ground until you ride them, and a tamed flyer follows you like any tame (E on it: follow / stay).");
+            w.Bullet("Following you (not ridden, not on Stay), a tamed flyer or Mini Fader fights the enemies around you with its own attacks.");
+            w.Bullet("Saddle looks: craft a Saddle dye at the workbench and use it on a saddled mount. Each mount takes its own set of looks (horse: Classic, Meadow, Palomino; mini Moder: Classic, Frost, Royal; drake: Classic, Glacier, Wolf hide; Mini Fader: Classic, Ashlands, Black hide; Eikthyr: Classic, Meadow, Wolf hide, Black hide; Bjorn: Classic, Wolf hide, Black hide, Palomino; Fuling brute: Classic, Royal, Black hide, Palomino; Sea serpent: Classic, Frost, Glacier; Bonemaw: Classic, Ashlands, Black hide).");
+            w.Bullet("Saddle: a Sky saddle (FiresSkySaddle), used on the tamed flyer. Once saddled, E anywhere on it mounts " +
+                "(unsaddled, E is follow / stay). E twice quickly dismounts; a single E never does (it turns in the air).");
+            w.Divider();
+
+            w.SubHeader("Flight controls (helicopter style)");
+            w.Bullet("Shift — speed up; on the ground it takes off.");
+            w.Bullet("W — nose down, fly forward faster. S — nose up: slow down, then back off.");
+            w.Bullet("A / D — bank and slide left / right.");
+            w.Bullet("Q / E — turn flat left / right ([Flight] keys in Core's config).");
+            w.Bullet("Space held — climb straight up. Space twice quickly — lock a hover in place (twice again, or any movement key, to release).");
+            w.Bullet("Ctrl held — fly straight down and land. Ctrl or E twice quickly — step off in mid-air (you fall; the mount lands and follows you).");
+            w.Bullet("Let go of everything and it settles into a hover. Space and dodge never dismount: E twice does.");
+            w.Bullet("LMB / MMB — the mount's own main / special attack, aimed where your crosshair points while the flight keeps its heading. Alt + mouse wheel picks the special.");
+            w.Bullet("RMB — a bubble shield on you and the mount (the Staff of Protection's: it soaks up about 200 damage); 30 s cooldown.");
+            w.Paragraph("No stall. Flying spends the mount's stamina (see Mount Levels & Stamina); a Tired flyer sinks and lands. " +
+                "If you die while riding, the mount waits at your tombstone.");
+        }
+
+        private static void BuildFader(FiresCore.Help.HelpContentWriter w)
+        {
+            w.Header("Mini Fader");
+            w.Paragraph("A small, tame Fader that runs, leaps and glides. The Fader drops a Fader egg; set it in a mount nest " +
+                "(the same nest as the Moder egg) and after a day it hatches a tame Mini Fader. Saddle it with a Sky saddle.");
+            w.Divider();
+            w.SubHeader("Riding");
+            w.Bullet("E on the saddled Fader mounts; E twice quickly dismounts.");
+            w.Bullet("On the ground it rides like the horse: W eases from a walk up to a run, Shift sprints, A / D turn at full speed, " +
+                "C toggles walk mode.");
+            w.Bullet("Space — jump. Hold it longer for a higher, further leap: about 14 m up and 20 m ahead at full charge, a small hop " +
+                "on a tap. A running leap keeps its speed. Hold A or D for a side leap.");
+            w.Bullet("It does not glide by itself. Space again during the leap — a second jump; then hold Space while falling to glide, " +
+                "let go to drop. Off a cliff, hold Space while falling to glide.");
+            w.Bullet("While gliding, the flying mounts' keys steer: W nose down (faster), S nose up (slower), A / D bank and turn, " +
+                "Q / E turn, Shift faster, Ctrl drops out. Neither you nor the Fader takes fall damage while you ride.");
+            w.Bullet("LMB / MMB — the Fader's own bite and flame breath at your crosshair; Alt + mouse wheel picks the special " +
+                "(claws, spin, fissure, wall of fire, meteors). RMB — the bubble shield on you and the Fader.");
+            w.Bullet("W into a cliff, a rock face or a built wall (near-vertical: steeper than about 75 degrees; it holds on down to 60) — climb it: W / S up / down, A / D along it. " +
+                "Over the top it pulls itself onto the flat; Space jumps off the wall; S at the bottom steps off. Climbing costs no stamina.");
+        }
+
+        private static void BuildBeasts(FiresCore.Help.HelpContentWriter w)
+        {
+            w.Header("Beast Mounts");
+            w.Paragraph("Ride Eikthyr, Bjorn or a Fuling brute. Craft its call at the workbench (its trophy + Leather scraps 5), then use " +
+                "the call: a tame one appears in front of you and follows you. The call is used up.");
+            w.Bullet("Saddle: a Beast saddle (Deer hide 10, Leather scraps 10, Bronze nails 10; workbench level 2), used on the tamed beast. " +
+                "A saddled beast wears the saddle on its back. E on it mounts; E twice quickly dismounts.");
+            w.Bullet("The water pair: the Sea serpent and Bonemaw (their calls take their trophies, same recipe). They swim only, and the " +
+                "call answers only in deep water. They can't leave the water: at the shore you get off.");
+        }
+
+        private static void BuildWhistle(FiresCore.Help.HelpContentWriter w)
+        {
+            w.Header("Mount Whistle");
+            w.Paragraph("Craft a Mount whistle at the workbench (Wood 2, Leather scraps 2) and carry it. Double-tap H and the last mount " +
+                "you rode appears a few metres behind you, from anywhere in the world, and follows you. You hear the call (a Lox shout " +
+                "by default) as you whistle and where the mount arrives.");
+            w.Bullet("30 s between calls. A mount someone else is riding can't come.");
+            w.Bullet("Key, tap window, cooldown, distance and sound: [Mounts.Whistle] in F1 > Config settings.");
+        }
+
+        private static void BuildLevels(FiresCore.Help.HelpContentWriter w)
+        {
+            w.Header("Mount Levels & Stamina");
+            w.Paragraph("Every mount levels up from 1 to 20, and keeps its level wherever it goes. Its name shows it (\"Mini Moder - Lv 4\").");
+            w.Bullet("XP: riding on the ground, time in the air, kills by the mount's own attacks (and yours while mounted), and feeding it (5 XP, once a minute).");
+            w.Bullet("Every mount eats: drop its food near it. Horse: its taming food. Drake: Freeze gland, Crystal. Mini Moder: Freeze gland, " +
+                "Crystal, Wolf meat. Mini Fader: Asksvin or Volture meat, Charred bone. Eikthyr: Raspberries, Blueberries, Dandelion, Mushroom, " +
+                "Carrot. Bjorn: Honey, berries, Raw meat. Fuling brute: Barley, Cloudberries, Lox meat. Sea serpent: raw fish, Serpent meat. " +
+                "Bonemaw: Ashlands fish and meats.");
+            w.Bullet("Each level: more stamina (+6%), faster stamina regen (+4%), more speed (+1.5%), health (+5%) and attack damage (+3%). " +
+                "A flyer's height limit rises from 40 m at level 1 to 100 m at level 20. Level 10: Shift in the air boosts. Level 20: a gold name.");
+            w.Divider();
+            w.SubHeader("Stamina");
+            w.Bullet("The bar on the mount panel. Climbing, Shift, cruising and hovering drain it; descending barely does; it refills on the ground.");
+            w.Bullet("A Mini Fader's leap costs 10-25 (more for a higher leap); gliding refills it a little.");
+            w.Bullet("At 0 the mount is Tired: no climbing or boost, a flyer sinks and lands, the Fader can't leap. It recovers on the ground.");
+            w.Divider();
+            w.SubHeader("Colours (essences)");
+            w.Bullet("Brew an essence at the Cauldron, hold it and press E on your tamed mount: it takes that essence's colours " +
+                "(Verdancy, Embers, Frost, Shadow, the Spectre, Crystal, Cinders), and its attacks glow to match. The essence is used up.");
+            w.Bullet("Used on an egg in a mount nest, the hatchling comes out in that colour. An Essence of Clarity returns a mount or egg " +
+                "to its own colours. A horse takes the coat that goes with the essence.");
+        }
+
         private static void BuildAdmin(FiresCore.Help.HelpContentWriter w)
         {
             w.AdminHeader("Admin & Config");
             w.SubHeader("Commands");
-            w.Bullet("firesmounts_spawn [2|refab] [dist] — spawn a horse in front of you " +
-                "(default FiresHorse; '2' = the reference-model FiresHorse2)");
+            w.Bullet("firesmounts_spawn [dist] — spawn a horse in front of you (default 4 m)");
             w.Bullet("firesmounts_tame [nameFilter] — instantly tame the nearest horse (does NOT saddle)");
             w.Bullet("firesmounts_saddle — drop a SaddleLox pickup at your feet");
-            w.Bullet("firesmounts_diag — dump the nearest horse's full state to the log");
+            w.Bullet("firesmounts_diag — dump the nearest mount's full state to the log");
+            w.Bullet("firesmounts_spawnflyer [moder|drake|fader] [dist] — spawn a creature mount (on the ground) in front of you");
+            w.Bullet("firesmounts_hatch — finish the nearest mount nest's incubation now");
+            w.Bullet("firesmounts_whistle — whistle as the double tap does (needs a Mount whistle in the inventory)");
+            w.Bullet("firesmounts_level <1-20> / firesmounts_xp <n> / firesmounts_mountinfo — the nearest mount's level, XP and stamina");
             w.AdminDivider();
 
-            w.SubHeader("Key Config ([Mounts.*] in F8, live-apply)");
+            w.SubHeader("Key Config ([Mounts.*] in F1 > Config settings, live-apply)");
             w.Bullet("Movement: WalkSpeed (3), RunSpeed (10), TurnSpeed (120°/s), GaitRampRate, " +
                 "ShiftSprint, EnableRiderJump, AutoHitchOnDismount");
             w.Bullet("UseVanillaSteering — switch reins steering back to vanilla look-direction steering");

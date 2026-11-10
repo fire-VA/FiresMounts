@@ -24,7 +24,7 @@ namespace FiresMounts
         // Coat keys — MUST match the FiresHorseCoat_<name> materials baked by FiresMountBuilder.HapCoats.
         internal static readonly string[] Coats = { "Brown", "Gray", "Gray2", "Palomino", "White" };
         // Mane/tail styles: (config name, renderer-name substring). The substrings are disjoint and match the HAP
-        // mesh SMRs (cookie recipe): "Horse Mane V/Long/01_Short/_Old ...", "Horse Tail_New/_Old ...". Bones (no
+        // mesh SMRs, e.g. "Horse Mane V/Long/01_Short/_Old ...", "Horse Tail_New/_Old ...". Bones (no
         // renderer) are skipped automatically. We enable the chosen style's LOD0 and disable every other mane/tail.
         private static readonly (string name, string sub)[] Manes =
             { ("V", "mane v "), ("Long", "mane long"), ("Short", "mane01"), ("Old", "mane_old") };
@@ -39,15 +39,15 @@ namespace FiresMounts
         private void Start()
         {
             _nview = GetComponent<ZNetView>();
-            // No early-out on an invalid nview: that silently killed the WHOLE loadout (no mane, no tail, saddle mesh
-            // stuck at its baked default) on any instance whose ZNetView wasn't valid yet at Start. The coroutines
-            // self-heal now — they wait for validity instead of never running.
+            // No early-out on an invalid nview: that would kill the WHOLE loadout (no mane, no tail, saddle mesh
+            // stuck at its baked default) on any instance whose ZNetView isn't valid yet at Start. The coroutines
+            // wait for validity instead.
             StartCoroutine(Resolve());
             StartCoroutine(SaddleVisibilityLoop());   // spawn bare-backed; saddle mesh appears only once applied
         }
 
-        // Owner rolls + writes each loadout piece; non-owners wait for it to replicate. NEVER gives up (the old 6s
-        // window silently expired on slow owner rolls/late nviews = bald+tailless horses): retries every 0.5s until
+        // Owner rolls + writes each loadout piece; non-owners wait for it to replicate. NEVER gives up (a fixed
+        // window can expire on slow owner rolls/late nviews = bald+tailless horses): retries every 0.5s until
         // the loadout is applied AND the coat resolves. Logs the outcome once per horse so a broken link is visible
         // in the log instead of a mystery; a chosen style that matches 0 renderers falls back to one that matches
         // (a horse can never lose its tail to a bad style table).
@@ -80,7 +80,7 @@ namespace FiresMounts
                         if (tailOn == 0 && FallbackStyle("tail", Tails, out int tFb) > 0)
                         { tailOn = 1; if (_nview.IsOwner()) zdo.Set(TailKey, tFb); }
                         _loadoutApplied = tailOn > 0;   // don't latch while the tail is missing — keep retrying
-                        FiresMountsPlugin.Log.LogInfo($"[FiresMounts] loadout '{name}' owner={_nview.IsOwner()} coat={coat} mane={mane}{(mane == Manes.Length ? "(bald)" : "")} tail={tail} maneOn={maneOn}(live {maneLive}) tailOn={tailOn}(live {tailLive})");
+                        FiresMountsPlugin.Log.LogDebug($"[FiresMounts] loadout '{name}' owner={_nview.IsOwner()} coat={coat} mane={mane}{(mane == Manes.Length ? "(bald)" : "")} tail={tail} maneOn={maneOn}(live {maneLive}) tailOn={tailOn}(live {tailLive})");
                     }
                     if (_loadoutApplied && ApplyCoat(coat)) yield break;
                 }
@@ -199,9 +199,8 @@ namespace FiresMounts
                 if (chosen)
                 {
                     // The HAP model ships EVERY mane/tail variant except its defaults (Mane V / Tail New) under an
-                    // INACTIVE parent node (probe: activeInHier=False on Old/Short/Long/Tail_Old). Enabling the leaf
-                    // renderer alone leaves activeInHierarchy=false, so it never draws — that was the "no mane/tail"
-                    // bug. Walk the whole chain from the renderer up to the horse root active so the chosen style is
+                    // INACTIVE parent node (Old/Short/Long/Tail_Old). Enabling the leaf
+                    // renderer alone leaves activeInHierarchy=false, so it never draws. Walk the whole chain from the renderer up to the horse root active so the chosen style is
                     // genuinely in the hierarchy. Non-chosen renderers stay enabled=false, so a shared parent going
                     // active can't reveal a wrong variant.
                     for (Transform t = r.transform; t != null; t = t.parent)
@@ -255,6 +254,19 @@ namespace FiresMounts
             if (IsPinned(MountConfig.Coat)) { int i = PickCoat(); if (owner) zdo.Set(CoatKey, i); _coatApplied = -1; ApplyCoat(i); }
             if (IsPinned(MountConfig.Mane)) { int i = PickMane(); if (owner) zdo.Set(ManeKey, i); ToggleStyle("mane", i < Manes.Length ? Manes[i].sub : null); }
             if (IsPinned(MountConfig.Tail)) { int i = PickTail(); if (owner) zdo.Set(TailKey, i); ToggleStyle("tail", Tails[i].sub); }
+        }
+
+        /// <summary>
+        /// Variants: the coat a variant names (VariantDef.HorseCoat), on every peer; the owner
+        /// keeps it in the ZDO so a reload rolls nothing new. False for an unknown coat name.
+        /// </summary>
+        internal bool UseCoat(string coatName)
+        {
+            int i = Array.FindIndex(Coats, c => string.Equals(c, coatName, StringComparison.OrdinalIgnoreCase));
+            if (i < 0 || _nview == null || !_nview.IsValid()) return false;
+            if (_nview.IsOwner()) _nview.GetZDO().Set(CoatKey, i);
+            _coatApplied = -1;
+            return ApplyCoat(i);
         }
 
         private static bool IsPinned(BepInEx.Configuration.ConfigEntry<string> cfg)
